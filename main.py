@@ -117,7 +117,7 @@ async def list_torrents(update: Update, context: ContextTypes.DEFAULT_TYPE):
   except:
     await update.effective_message.reply_text(f'Не удалось получить список торрентов')
 
-  reply = "\n".join([f'{torrent[b"name"].decode('utf-8')} -> {torrent[b"state"]} [{torrent[b"progress"]} %]' for torrent in torrents.values()])
+  reply = "\n".join([f'{torrent[b"name"].decode('utf-8')} -> {torrent[b"state"].decode('utf-8')} [{torrent[b"progress"]:.2f} %]' for torrent in torrents.values()])
   await update.effective_message.reply_text(reply)
 
 def __parse_magnet_link(magnet_link):
