@@ -1,0 +1,16 @@
+[[source]]
+url = "https://pypi.org/simple"
+verify_ssl = true
+name = "murz_home_bot"
+
+[packages]
+logging = "0.4.9.6"
+deluge-client = "1.10.2"
+pydantic = "2.11.7"
+pydantic-settings = "2.10.1"
+python-telegram-bot = {extras = ["all"], version = "22.3"}
+
+[dev-packages]
+
+[requires]
+python_version = "3.12"
