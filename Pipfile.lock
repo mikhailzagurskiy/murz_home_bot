@@ -1,7 +1,7 @@
 {
     "_meta": {
         "hash": {
-            "sha256": "2b58d3b1b0401ff087b1d1617ece90cdb91bce70f90812fa11b6fec653a16ac9"
+            "sha256": "43b94c5472eca347bebc919f1b11dc20af78beeb00e47d49806fc92e868bb96b"
         },
         "pipfile-spec": 6,
         "requires": {
@@ -554,6 +554,15 @@
             ],
             "markers": "python_version >= '3.9'",
             "version": "==22.3"
+        },
+        "shortuuid": {
+            "hashes": [
+                "sha256:3bb9cf07f606260584b1df46399c0b87dd84773e7b25912b7e391e30797c5e72",
+                "sha256:a482a497300b49b4953e15108a7913244e1bb0d41f9d332f5e9925dba33a3c5a"
+            ],
+            "index": "pypi",
+            "markers": "python_version >= '3.6'",
+            "version": "==1.0.13"
         },
         "socksio": {
             "hashes": [

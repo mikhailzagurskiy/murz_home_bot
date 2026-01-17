@@ -346,12 +346,10 @@ if __name__ == "__main__":
     application.add_handler(download_torrent_by_link_handler)
     application.add_handler(list_torrents_handler)
 
-    application.add_handler(annual_event_handler)
-
     register_birthday_handlers(application)
 
     async def post_start(application: Application):
-        print("Run post start")
+        logging.log(5, "Run post start")
 
         if application.job_queue is None:
             return

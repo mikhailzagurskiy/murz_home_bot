@@ -4,6 +4,7 @@ verify_ssl = true
 name = "pypi"
 
 [packages]
+shortuuid = "1.0.13"
 logging = "0.4.9.6"
 deluge-client = "1.10.2"
 pydantic = "2.11.7"
