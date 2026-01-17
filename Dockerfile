@@ -29,19 +29,4 @@ RUN addgroup -S murz_home_bot && adduser -S murz_home_bot -G murz_home_bot --no-
 
 USER murz_home_bot
 
-ARG BOT_TOKEN
-ENV murz_home_bot_BOT_TOKEN=${BOT_TOKEN}
-
-ARG DELUGE_ADDR
-ENV murz_home_bot_DELUGE_ADDR=${DELUGE_ADDR}
-
-ARG DELUGE_PORT
-ENV murz_home_bot_DELUGE_PORT=${DELUGE_PORT}
-
-ARG DELUGE_USERNAME
-ENV murz_home_bot_DELUGE_USERNAME=${DELUGE_USERNAME}
-
-ARG DELUGE_PASSWORD
-ENV murz_home_bot_DELUGE_PASSWORD=${DELUGE_PASSWORD}
-
 CMD ["python", "main.py"]

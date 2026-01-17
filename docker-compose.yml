@@ -4,6 +4,8 @@ services:
   murz_home_bot:
     build: .
     container_name: murz_home_bot
+    env_file:
+      - .env_prod
     environment:
       VERSION: 0.2.0
 
