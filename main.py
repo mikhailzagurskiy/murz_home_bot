@@ -35,7 +35,6 @@ from reminder.birthday import (
     register_handlers as register_birthday_handlers,
     reconcile as reconcile_birthdays,
 )
-from reminder2 import create_annual_event
 from settings import Settings
 
 logging.basicConfig(
@@ -342,8 +341,6 @@ if __name__ == "__main__":
     )
 
     list_torrents_handler = CommandHandler("list", list_torrents)
-
-    annual_event_handler = CommandHandler("annual", create_annual_event)
 
     application.add_handler(download_torrent_by_file_handler)
     application.add_handler(download_torrent_by_link_handler)
