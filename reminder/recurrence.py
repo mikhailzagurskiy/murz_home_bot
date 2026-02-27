@@ -74,11 +74,16 @@ class Recurrence(EmbeddedDocument):
     # When to expire an event
     stop_after = DateTimeField(required=False)
 
+    meta = {
+        "collection": "recurrents",
+        "allow_inheritance": True,
+    }
+
 
 class Regular(Recurrence):
     """Regular recurrence
 
-    Fired once per N numbers of hours/minutes/seconds
+    Fire once per N numbers of hours/minutes/seconds
 
     Examples:
         - every 1 hour
@@ -95,7 +100,7 @@ class Regular(Recurrence):
 class Daily(Recurrence):
     """Daily recurrence
 
-    Fired every N days
+    Fire every N days
 
     Examples:
         - every 1 day
@@ -110,7 +115,7 @@ class Daily(Recurrence):
 class Weekly(Recurrence):
     """Weekly recurrence
 
-    Fired every N week on chosen days of the week
+    Fire every N week on chosen days of the week
 
     Examples:
         - every 1 week on Mon
@@ -135,7 +140,7 @@ class Monthly(Recurrence):
 class MonthlyOn(Monthly):
     """Simple monthly recurrence
 
-    Fired every N months at chosen date
+    Fire every N months at chosen date
 
     Examples:
         - every 1 month on 12 day of the month
@@ -150,7 +155,7 @@ class MonthlyOn(Monthly):
 class MonthlyComplex(Monthly):
     """Complex monthly recurrence
 
-    Fired every N month at specific day
+    Fire every N month at specific day
 
     Examples:
         - every 1 month on first day
@@ -175,7 +180,7 @@ class Annual(Recurrence):
 class AnnualOn(Annual):
     """Simple annual event
 
-    Fired every N years on specified date
+    Fire every N years on specified date
 
     Examples:
         - Every 1 year on 12 of October
@@ -192,7 +197,7 @@ class AnnualOn(Annual):
 class AnnualWeek(Annual):
     """Annual recurrence every specified weeks
 
-    Fired every N years in M week of the year on specified days of the week
+    Fire every N years in M week of the year on specified days of the week
 
     Examples:
         - every 1 year in 12 week on Sun
@@ -217,7 +222,7 @@ class AnnualMonth(Annual):
 class AnnualMonthOn(AnnualMonth):
     """Simple annual recurrence within specified months
 
-    Fired every N years in chosen months on specified date
+    Fire every N years in chosen months on specified date
 
     Examples:
         - every 1 year in September, October on 12
@@ -232,7 +237,7 @@ class AnnualMonthOn(AnnualMonth):
 class AnnualMonthComplex(AnnualMonth):
     """Complex annual recurrence within specified months
 
-    Fired every N years in chosen months on specific day of the month
+    Fire every N years in chosen months on specific day of the month
 
     Examples:
         - every 1 year in September, October on last day
@@ -245,3 +250,9 @@ class AnnualMonthComplex(AnnualMonth):
 
     # Every specific day type
     day_type = EnumField(RecurrenceMonthDay, required=True)
+
+
+class EveryYear(Recurrence):
+    """Every year on specific date recurrence"""
+
+    date = DateField(required=True)
