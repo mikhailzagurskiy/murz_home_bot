@@ -42,6 +42,28 @@ logging.basicConfig(
 )
 
 
+def addLoggingLevel(levelName, levelNum, methodName=None):
+    if not methodName:
+        methodName = levelName.lower()
+
+    # Add the level name and value to the module
+    logging.addLevelName(levelNum, levelName)
+    setattr(logging, levelName, levelNum)
+
+    # Add the method to the Logger class
+    def logForLevel(self, message, *args, **kwargs):
+        if self.isEnabledFor(levelNum):
+            self._log(levelNum, message, args, **kwargs)
+
+    setattr(logging.getLoggerClass(), methodName, logForLevel)
+    setattr(logging, methodName, logForLevel)
+
+
+addLoggingLevel("TRACE", 5)
+
+logging.getLogger("reminder").setLevel(logging.TRACE)
+
+
 async def donwload_torrent_by_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Download torrent by link with deluge"""
     if update.effective_user is None:

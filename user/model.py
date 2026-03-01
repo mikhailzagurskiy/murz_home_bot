@@ -11,5 +11,6 @@ class UserStatus(Enum):
 class User(Document):
     user_id = IntField(required=True, unique=True)
     username = StringField(required=True, unique=True)
+    chat_id = IntField(required=True)
     status = EnumField(UserStatus, default=UserStatus.ACTIVE)
     meta = {"collection": "users"}

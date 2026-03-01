@@ -24,13 +24,6 @@ class EventStatus(Enum):
     DELETED = "deleted"
 
 
-class EventType(Enum):
-    """Type of the event"""
-
-    BIRTHDAY = "birthday"
-    CUSTOM = "custom"
-
-
 class Event(Document):
     """Base class for scheduled event"""
 
@@ -41,7 +34,6 @@ class Event(Document):
     addressed_to = ReferenceField(User, required=True, reverse_delete_rule=DENY)
     state = EnumField(EventState, default=EventState.ENABLED, required=True)
     status = EnumField(EventStatus, default=EventStatus.CREATED, required=True)
-    typ = EnumField(EventType, required=False, default=EventType.CUSTOM)
     need_confirmation = BooleanField(default=False)
     job_id = StringField(required=True, unique=True)
 
