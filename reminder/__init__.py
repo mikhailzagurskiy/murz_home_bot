@@ -19,6 +19,8 @@ from apscheduler.events import (
 
 from .model import Event, EventStatus
 
+logger = logging.getLogger(__name__)
+
 UNABLE_CREATE_EVENT_MSG = "Unable to create event"
 UNABLE_PARSE_EVENT_ID_MSG = "Unable to parse event id"
 UNABLE_RESUME_EVENT_MSG = "Unable to resume event"
@@ -28,19 +30,19 @@ UNABLE_SCHEDULE_REMINDER_MSG = "Unable to schedule reminder"
 
 
 def generic_listener(event):
-    logging.log(5, "Generic event: ", event)
+    logger.trace("Generic event: ", event)
     if isinstance(event, SchedulerEvent):
-        logging.log(5, "alias: ", event.alias)
+        logger.trace("alias: ", event.alias)
     if isinstance(event, JobEvent):
-        logging.log(5, "code: ", event.code)
-        logging.log(5, "job_id: ", event.job_id)
-        logging.log(5, "jobstore: ", event.jobstore)
+        logger.trace("code: ", event.code)
+        logger.trace("job_id: ", event.job_id)
+        logger.trace("jobstore: ", event.jobstore)
     if isinstance(event, JobSubmissionEvent):
-        logging.log(5, "scheduled_run_times: ", event.scheduled_run_times)
+        logger.trace("scheduled_run_times: ", event.scheduled_run_times)
     if isinstance(event, JobExecutionEvent):
-        logging.log(5, "retval: ", event.retval)
-        logging.log(5, "exception: ", event.exception)
-        logging.log(5, "traceback: ", event.traceback)
+        logger.trace("retval: ", event.retval)
+        logger.trace("exception: ", event.exception)
+        logger.trace("traceback: ", event.traceback)
 
 
 def register_job(event: JobEvent):
@@ -49,14 +51,14 @@ def register_job(event: JobEvent):
 
     Event.objects(job_id=event.job_id).update_one(status=EventStatus.SCHEDULED)  # type: ignore
 
-    logging.debug(f"Event for {event.job_id} was scheduled")
+    logger.debug(f"Event for {event.job_id} was scheduled")
 
 
 def schedule_job(event: JobSubmissionEvent):
     if not isinstance(event, JobSubmissionEvent):
         raise TypeError("Incorrect event type")
 
-    logging.debug(f"SCHEDULE {event.job_id}")
+    logger.debug(f"SCHEDULE {event.job_id}")
 
 
 def miss_job(event: JobExecutionEvent):
@@ -64,7 +66,7 @@ def miss_job(event: JobExecutionEvent):
         raise TypeError("Incorrect event type")
 
 
-    logging.debug(f"MISS {event.job_id}")
+    logger.debug(f"MISS {event.job_id}")
 
 
 def execute_job(event: JobExecutionEvent):
@@ -72,14 +74,14 @@ def execute_job(event: JobExecutionEvent):
         raise TypeError("Incorrect event type")
 
 
-    logging.debug(f"EXECUTE {event.job_id}")
+    logger.debug(f"EXECUTE {event.job_id}")
 
 
 def fail_job(event: JobExecutionEvent):
     if not isinstance(event, JobExecutionEvent):
         raise TypeError("Incorrect event type")
 
-    logging.debug(f"FAIL {event.job_id}")
+    logger.debug(f"FAIL {event.job_id}")
 
 
 def remove_job(event: JobExecutionEvent):
@@ -88,12 +90,12 @@ def remove_job(event: JobExecutionEvent):
 
     Event.objects(job_id=event.job_id).update_one(status=EventStatus.EXPIRED)  # type: ignore
 
-    logging.debug(f"Event for {event.job_id} was expired")
+    logger.debug(f"Event for {event.job_id} was expired")
 
 
 def subscribe_to_events(application: Application):
     if application.job_queue is None:
-        logging.error("Job queue doesn't exist")
+        logger.error("Job queue doesn't exist")
         return
 
     application.job_queue.scheduler.add_listener(register_job, EVENT_JOB_ADDED)

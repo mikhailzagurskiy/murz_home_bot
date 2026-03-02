@@ -1,3 +1,4 @@
+from json import dumps
 import logging
 
 import re
@@ -282,15 +283,22 @@ async def __cb(context: ContextTypes.DEFAULT_TYPE) -> None:
         logger.warn(f"Unable to execute disabled Event with id {data.event_id}")
         return
 
-    next_year = job.job.next_run_time.year + 1
-    scheduled_date = job.job.next_run_time.replace(year=next_year)
+    date = birthday.recurrence.date
+    schedule_year = datetime.now(tz=__default_zone).year + 1
+    scheduled_date = datetime(
+        schedule_year,
+        date.month,
+        date.day,
+        hour=__default_hour,
+        tzinfo=__default_zone,
+    )
 
     await context.bot.send_message(job.chat_id, text=f"Напоминаю! {data.text} !")
 
     try:
         next_job = __schedule_next_job(context.job_queue, job, scheduled_date)
 
-        birthday.job_id = next_job.job_id
+        birthday.job_id = next_job.id
         birthday.status = EventStatus.SCHEDULED
         birthday.save()
     except Exception as e:
