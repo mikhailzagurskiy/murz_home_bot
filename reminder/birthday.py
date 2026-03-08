@@ -1,7 +1,10 @@
-from json import dumps
 import logging
 
+import math
 import re
+from enum import Enum, auto
+
+import pandas
 from uuid import UUID
 from shortuuid import uuid
 from datetime import datetime, timedelta
@@ -9,11 +12,20 @@ from zoneinfo import ZoneInfo
 
 from typing import Dict, Optional, Tuple, cast
 
-from telegram import Update
-from telegram.ext import ContextTypes, Application, CommandHandler, JobQueue, Job
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
+from telegram.ext import (
+    CallbackQueryHandler,
+    ContextTypes,
+    Application,
+    CommandHandler,
+    JobQueue,
+    Job,
+    ConversationHandler,
+)
 
 from user import UNKNOWN_USER_MSG
 from user.model import User, UserStatus
+from common import trim_str_by_len
 
 from reminder.recurrence import EveryYear
 from reminder.model import Birthday, EventState, EventStatus
@@ -36,6 +48,8 @@ __birhtday_pattern = re.compile(
 __default_hour = 9
 __default_zone = ZoneInfo("Europe/Kaliningrad")
 
+__page_size = 5
+
 
 class __JobDescriptor(object):
     def __init__(self, text: str, event_id):
@@ -43,18 +57,86 @@ class __JobDescriptor(object):
         self.event_id = event_id
 
 
+class State(Enum):
+    """
+    States of the conversation
+    """
+
+    LISTING = auto()
+    SUMMARY = auto()
+
+
+class Action(Enum):
+    """
+    Actions, available during the conversation
+    """
+
+    CREATE = auto()
+    DELETE = auto()
+    ENABLE = auto()
+    DISABLE = auto()
+    SUMMARY = auto()
+    LIST = auto()
+    NEXT = auto()
+    PREV = auto()
+    FIRST = auto()
+    LAST = auto()
+
+
 def register_handlers(application: Application):
     create_handler = CommandHandler("create_birthday", create)
-    list_handler = CommandHandler("list_birthdays", list)
-    delete_handler = CommandHandler("delete_birthday", delete)
-    enable_handler = CommandHandler("enable_birthday", enable)
-    disable_handler = CommandHandler("disable_birthday", disable)
+
+    conversation_handler = ConversationHandler(
+        entry_points=[CommandHandler("birthday", start_conversation)],
+        states={
+            State.LISTING: [
+                CallbackQueryHandler(
+                    start_conversation, pattern="^" + str(Action.NEXT) + "$"
+                ),
+                CallbackQueryHandler(
+                    start_conversation, pattern="^" + str(Action.PREV) + "$"
+                ),
+                CallbackQueryHandler(
+                    start_conversation, pattern="^" + str(Action.FIRST) + "$"
+                ),
+                CallbackQueryHandler(
+                    start_conversation, pattern="^" + str(Action.LAST) + "$"
+                ),
+                CallbackQueryHandler(
+                    stop_conversation, pattern="^" + str(ConversationHandler.END) + "$"
+                ),
+                CallbackQueryHandler(
+                    summary,
+                    pattern=r"^" + str(Action.SUMMARY) + r"_(?P<id>[0-9A-Fa-f]{24})$",
+                ),
+            ],
+            State.SUMMARY: [
+                CallbackQueryHandler(
+                    enable,
+                    pattern="^" + str(Action.ENABLE) + r"_(?P<id>[0-9A-Fa-f]{24})$",
+                ),
+                CallbackQueryHandler(
+                    disable,
+                    pattern="^" + str(Action.DISABLE) + r"_(?P<id>[0-9A-Fa-f]{24})$",
+                ),
+                CallbackQueryHandler(
+                    delete,
+                    pattern="^" + str(Action.DELETE) + r"_(?P<id>[0-9A-Fa-f]{24})$",
+                ),
+                CallbackQueryHandler(
+                    start_conversation, pattern="^" + str(Action.LIST) + "$"
+                ),
+                CallbackQueryHandler(
+                    stop_conversation, pattern="^" + str(ConversationHandler.END) + "$"
+                ),
+            ],
+        },
+        fallbacks=[],
+    )
 
     application.add_handler(create_handler)
-    application.add_handler(list_handler)
-    application.add_handler(delete_handler)
-    application.add_handler(enable_handler)
-    application.add_handler(disable_handler)
+
+    application.add_handler(conversation_handler)
 
 
 def reconcile(application: Application):
@@ -89,6 +171,166 @@ def reconcile(application: Application):
                 else:
                     logger.debug(f"Resume job {b.job_id} for {b.title}")
                     application.job_queue.scheduler.resume_job(b.job_id)
+
+
+async def start_conversation(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> State:
+    assert update.effective_message is not None
+    assert context.user_data is not None
+
+    context.user_data.pop("changes")
+
+    total_pages = math.ceil(Birthday.objects.count() / __page_size)
+
+    page = context.user_data["page"]
+
+    if update.callback_query == None:
+        page = 1
+    elif update.callback_query.data == str(Action.NEXT) and page < total_pages:
+        page += 1
+    elif update.callback_query.data == str(Action.PREV) and page > 1:
+        page -= 1
+    elif update.callback_query.data == str(Action.FIRST):
+        page = 1
+    elif update.callback_query.data == str(Action.LAST):
+        page = total_pages
+    else:
+        pass
+
+    birthdays = []
+    while True:
+        offset = (page - 1) * __page_size
+        birthdays = Birthday.objects().order_by("created_at").skip(offset).limit(__page_size)  # type: ignore
+
+        # Go to prev page, if all elements from current page was deleted
+        if len(birthdays) == 0 and page > 1:
+            page -= 1
+        else:
+            break
+
+    rows = []
+    for birthday in birthdays:
+        bday = birthday.to_mongo().to_dict()
+        row = {
+            "idx": (offset + len(rows) + 1),
+            "person": trim_str_by_len(bday["person"], 20),
+            "date": bday["recurrence"]["date"].strftime("%d %B (%d.%m)"),
+            "state": bday["state"],
+            "status": bday["status"],
+        }
+        rows.append(row)
+
+    df = pandas.DataFrame(rows)
+
+    markdown_table = df.to_markdown(index=False)
+
+    line_len = markdown_table.find("\n")
+    horizontal_line = f"|{"-" * (line_len - 2)}|"
+    page_str = f"Page {page} / {total_pages}"
+    page_str = f"|{page_str:^{line_len - 2}}|"
+    msg = f"```\n{markdown_table}\n{horizontal_line}\n{page_str}```"
+
+    buttons = [
+        [
+            InlineKeyboardButton(
+                text=str(row["idx"]),
+                callback_data=f"{str(Action.SUMMARY)}_{birthday.id}",
+            )
+            for (row, birthday) in zip(rows, birthdays)
+        ],
+        [
+            InlineKeyboardButton(text="◀️", callback_data=str(Action.PREV)),
+            InlineKeyboardButton(text="▶️", callback_data=str(Action.NEXT)),
+        ],
+        [
+            InlineKeyboardButton(text="⏪", callback_data=str(Action.FIRST)),
+            InlineKeyboardButton(text="⏩", callback_data=str(Action.LAST)),
+        ],
+        [
+            InlineKeyboardButton(text="⏹️", callback_data=str(ConversationHandler.END)),
+        ],
+    ]
+    keyboard = InlineKeyboardMarkup(buttons)
+
+    if update.callback_query == None:
+        await update.effective_message.reply_text(
+            text=msg, reply_markup=keyboard, parse_mode="MarkdownV2"
+        )
+    else:
+        try:
+            await update.effective_message.edit_text(
+                text=msg, reply_markup=keyboard, parse_mode="MarkdownV2"
+            )
+        except Exception as e:
+            logger.error(e)
+
+    context.user_data["page"] = page
+
+    return State.LISTING
+
+
+async def stop_conversation(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """End conversation from InlineKeyboardButton."""
+    assert update.callback_query is not None
+
+    await update.callback_query.answer()
+
+    await update.callback_query.delete_message()
+
+    return ConversationHandler.END
+
+
+async def summary(update: Update, context: ContextTypes.DEFAULT_TYPE) -> State:
+    assert context.matches is not None
+    assert len(context.matches) > 0
+    assert update.effective_message is not None
+    assert context.user_data is not None
+
+    id = context.matches[0].group("id")
+
+    context.user_data["changes"] = context.user_data.get("changes", [])[-5:]
+
+    try:
+        birthday = Birthday.objects.get(id=id)  # type: ignore
+    except Exception as e:
+        logger.error(f"Unable to get birthday summary: {e}")
+        return State.LISTING
+
+    data = list(birthday.to_mongo().to_dict().items())
+    df = pandas.DataFrame(data)
+    markdown_table = df.to_markdown(index=False)
+    line_len = markdown_table.find("\n")
+    horizontal_line = f"|{"-" * (line_len - 2)}|"
+    msg = f"```\n{markdown_table}\n{horizontal_line}\n{"\n".join(context.user_data["changes"])}```"
+
+    buttons = [
+        [
+            InlineKeyboardButton(
+                text="✔️", callback_data=f"{str(Action.ENABLE)}_{birthday.id}"
+            ),
+            InlineKeyboardButton(
+                text="❌", callback_data=f"{str(Action.DISABLE)}_{birthday.id}"
+            ),
+            InlineKeyboardButton(
+                text="🗑️", callback_data=f"{str(Action.DELETE)}_{birthday.id}"
+            ),
+        ],
+        [
+            InlineKeyboardButton(text="↩️", callback_data=str(Action.LIST)),
+            InlineKeyboardButton(text="⏹️", callback_data=str(ConversationHandler.END)),
+        ],
+    ]
+    keyboard = InlineKeyboardMarkup(buttons)
+
+    try:
+        await update.effective_message.edit_text(
+            text=msg, reply_markup=keyboard, parse_mode="MarkdownV2"
+        )
+    except Exception as e:
+        logger.error(e)
+
+    return State.SUMMARY
 
 
 async def create(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -154,30 +396,26 @@ async def create(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 
-async def delete(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def delete(update: Update, context: ContextTypes.DEFAULT_TYPE) -> State:
     assert update.effective_user is not None
     assert update.effective_message is not None
     assert context.job_queue is not None
     assert update.effective_message.text is not None
+    assert context.matches is not None
+    assert len(context.matches) > 0
+    assert context.user_data is not None
 
-    try:
-        _cmd, id, *_remains = update.effective_message.text.split(" ")
-    except Exception as e:
-        logger.error(f"Unable to parse event id: {e}")
-        await update.effective_message.reply_text(UNABLE_PARSE_EVENT_ID_MSG)
-        return
+    id = context.matches[0].group("id")
 
-    birthday_repr = ""
     job_id = None
     try:
         birthday = Birthday.objects.get(id=id)  # type: ignore
-        birthday_repr = f"{birthday.title} for {birthday.addressed_to.username} by {birthday.created_by.username} at {birthday.recurrence.date} ({birthday.id})"
         job_id = birthday.job_id
         birthday.delete()
     except Exception as e:
         logger.error(f"Unable to delete event: {e}")
         await update.effective_message.reply_text(UNABLE_DELETE_EVENT_MSG)
-        return
+        return State.SUMMARY
     finally:
         try:
             if job_id != None and context.job_queue.scheduler.get_job(job_id) != None:
@@ -185,40 +423,23 @@ async def delete(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except Exception as e:
             logger.error(f"Unable to delete job: {e}")
             await update.effective_message.reply_text(UNABLE_DELETE_EVENT_MSG)
-            return
+            return State.SUMMARY
 
-    await update.effective_message.reply_text(f"Удалено напоминание {birthday_repr}")
+    context.user_data["changes"].append(f"Delete {birthday.title}")
+
+    return await start_conversation(update, context)
 
 
-async def list(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def enable(update: Update, context: ContextTypes.DEFAULT_TYPE) -> State:
     assert update.effective_user is not None
     assert update.effective_message is not None
     assert context.job_queue is not None
     assert update.effective_message.text is not None
+    assert context.matches is not None
+    assert len(context.matches) > 0
+    assert context.user_data is not None
 
-    birthdays = Birthday.objects()  # type: ignore
-    birthdays = [
-        f"{idx}. {b.title} for {b.addressed_to.username} by {b.created_by.username} at {b.recurrence.date} ({b.id})"
-        for idx, b in enumerate(birthdays)
-    ]
-
-    msg = "\n".join(birthdays) if len(birthdays) else "No birthdays"
-
-    await update.effective_message.reply_text(msg)
-
-
-async def enable(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    assert update.effective_user is not None
-    assert update.effective_message is not None
-    assert context.job_queue is not None
-    assert update.effective_message.text is not None
-
-    try:
-        _cmd, id, *_remains = update.effective_message.text.split(" ")
-    except Exception as e:
-        logger.error(f"Unable to parse event id: {e}")
-        await update.effective_message.reply_text(UNABLE_PARSE_EVENT_ID_MSG)
-        return
+    id = context.matches[0].group("id")
 
     Birthday.objects(id=id).update_one(state=EventState.ENABLED)  # type: ignore
     birthday = Birthday.objects.get(id=id)  # type: ignore
@@ -232,23 +453,23 @@ async def enable(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         logger.error(f"Unable to resume job: {e}")
         await update.effective_message.reply_text(UNABLE_RESUME_EVENT_MSG)
-        return
+        return State.SUMMARY
 
-    await update.effective_message.reply_text(f"Напоминания о дне рождения включены")
+    context.user_data["changes"].append(f"Enable {birthday.title}")
+
+    return await summary(update, context)
 
 
-async def disable(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def disable(update: Update, context: ContextTypes.DEFAULT_TYPE) -> State:
     assert update.effective_user is not None
     assert update.effective_message is not None
     assert context.job_queue is not None
     assert update.effective_message.text is not None
+    assert context.matches is not None
+    assert len(context.matches) > 0
+    assert context.user_data is not None
 
-    try:
-        _cmd, id, *_remains = update.effective_message.text.split(" ")
-    except Exception as e:
-        logger.error(f"Unable to parse event id: {e}")
-        await update.effective_message.reply_text(UNABLE_PARSE_EVENT_ID_MSG)
-        return
+    id = context.matches[0].group("id")
 
     Birthday.objects(id=id).update_one(state=EventState.DISABLED)  # type: ignore
     birthday = Birthday.objects.get(id=id)  # type: ignore
@@ -262,9 +483,11 @@ async def disable(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         logger.error(f"Unable to pause job: {e}")
         await update.effective_message.reply_text(UNABLE_PAUSE_EVENT_MSG)
-        return
+        return State.SUMMARY
 
-    await update.effective_message.reply_text(f"Напоминания о дне рождения выключены")
+    context.user_data["changes"].append(f"Disable {birthday.title}")
+
+    return await summary(update, context)
 
 
 async def __cb(context: ContextTypes.DEFAULT_TYPE) -> None:
